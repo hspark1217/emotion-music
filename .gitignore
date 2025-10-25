@@ -19,3 +19,4 @@ dist/
 # Log files
 *.log
 npm-debug.log*
+clean-repo/
