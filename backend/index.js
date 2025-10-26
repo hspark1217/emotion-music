@@ -1,57 +1,61 @@
 const express = require('express');
 const axios = require('axios');
-const mongoose = require('mongoose');
 require('dotenv').config();
 const cors = require('cors');
-
+const connectDB = require('./db');
 const Log = require('./models/Log');
 
 const app = express();
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
+const LASTFM_API_KEY = process.env.LASTFM_API_KEY;
 
+// ===========================
+// 미들웨어
+// ===========================
 app.use(cors());
 app.use(express.json());
 
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB connected'))
-  .catch(err => {
-    console.error('MongoDB 연결 실패:', err.message);
-    process.exit(1);
-  });
+// ===========================
+// DB 연결
+// ===========================
+connectDB();
 
+// ===========================
+// 감정-태그 매핑
+// ===========================
 const moodMap = {
-  '우울': 'sad',
-  '신남': 'party',
-  '비': 'rain',
-  '맑음': 'chillout',
-  '운동': 'workout',
-  '데이트': 'romantic'
+  우울: 'sad',
+  신남: 'party',
+  비: 'rain',
+  맑음: 'chillout',
+  운동: 'workout',
+  데이트: 'romantic'
 };
 
 const fallbackTags = {
-  'sad': ['melancholy', 'emotional', 'slow'],
-  'party': ['dance', 'club', 'electronic'],
-  'rain': ['ambient', 'acoustic', 'chillout'],
-  'workout': ['energy', 'gym', 'electronic'],
-  'romantic': ['love', 'ballad', 'soft']
+  sad: ['melancholy', 'emotional', 'slow'],
+  party: ['dance', 'club', 'electronic'],
+  rain: ['ambient', 'acoustic', 'chillout'],
+  workout: ['energy', 'gym', 'electronic'],
+  romantic: ['love', 'ballad', 'soft']
 };
 
-// ✅ 공통 추천 로직 함수
-async function fetchTracks(input) {
-  const keyword = moodMap[input] || input;
-  const apiKey = process.env.LASTFM_API_KEY;
-
-  await Log.create({ input, keyword });
+// ===========================
+// 추천 로직
+// ===========================
+const fetchTracks = async (emotion) => {
+  const keyword = moodMap[emotion] || emotion;
+  if (!LASTFM_API_KEY) throw new Error('LASTFM_API_KEY 미설정');
 
   const getTracks = async (tag) => {
-    const res = await axios.get('http://ws.audioscrobbler.com/2.0/', {
+    const res = await axios.get('https://ws.audioscrobbler.com/2.0/', {
       params: {
-        method: 'tag.getTopTracks',
+        method: 'tag.gettoptracks', // ✅ 소문자 메서드명 (API 요구사항)
         tag,
-        api_key: apiKey,
+        api_key: LASTFM_API_KEY,
         format: 'json',
-        limit: 10
-      }
+        limit: 10,
+      },
     });
     return res.data.tracks?.track || [];
   };
@@ -65,14 +69,27 @@ async function fetchTracks(input) {
     }
   }
 
+  // ✅ 로그 저장 (필드 이름 명시적으로 매핑)
+  await Log.create({
+    input: emotion,
+    keyword,
+    results: tracks.slice(0, 10),
+  });
+
   return tracks;
-}
+};
 
-// ✅ GET 방식
-app.get('/recommend', async (req, res) => {
+// ===========================
+// 요청 핸들러
+// ===========================
+app.post('/recommend', async (req, res) => {
   try {
-    const tracks = await fetchTracks(req.query.q);
+    const { emotion } = req.body;
+    if (!emotion) return res.status(400).json({ error: 'emotion이 필요합니다.' });
+
+    const tracks = await fetchTracks(emotion);
     if (!tracks.length) return res.status(404).json({ error: '추천 결과 없음' });
+
     res.json({ tracks });
   } catch (err) {
     console.error('추천 오류:', err.message);
@@ -80,17 +97,11 @@ app.get('/recommend', async (req, res) => {
   }
 });
 
-// ✅ POST 방식
-app.post('/api/recommend', async (req, res) => {
-  try {
-    const tracks = await fetchTracks(req.body.emotion);
-    if (!tracks.length) return res.status(404).json({ error: '추천 결과 없음' });
-    res.json({ tracks });
-  } catch (err) {
-    console.error('추천 오류:', err.message);
-    res.status(500).json({ error: '추천 실패' });
-  }
-});
+// ✅ 헬스체크 엔드포인트
+app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
 
+// ===========================
+// 서버 시작
+// ===========================
 app.listen(PORT, () => console.log(`추천 서버 실행 중: ${PORT}`));
 

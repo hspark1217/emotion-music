@@ -10,7 +10,11 @@ function App() {
 
   const getRecommendations = async () => {
     try {
-      const response = await axios.post('http://:${process.env.REACT_APP_API_URL/recommend', { emotion: input });
+      const response = await axios.post(
+        `${process.env.REACT_APP_API_URL}/recommend`,
+        { emotion: input }
+      );
+
       const rawTracks = response.data.tracks;
 
       // 🔹 각 곡에 대해 앨범 이미지 가져오기
@@ -24,6 +28,7 @@ function App() {
       setRecommendations(enrichedTracks);
       setError('');
     } catch (err) {
+      console.error('추천 요청 실패:', err);
       setError('추천을 가져오는 데 실패했습니다.');
     }
   };
@@ -43,13 +48,12 @@ function App() {
       <div className="recommendation-list">
         {recommendations.map((track, index) => (
           <div key={index} className="track-card">
-            <img
-              src={track.albumImage}
-              alt="앨범 이미지"
-            />
+            <img src={track.albumImage} alt="앨범 이미지" />
             <h3>{track.name}</h3>
             <p>{track.artist.name}</p>
-            <a href={track.url} target="_blank" rel="noopener noreferrer">듣기</a>
+            <a href={track.url} target="_blank" rel="noopener noreferrer">
+              듣기
+            </a>
           </div>
         ))}
       </div>
